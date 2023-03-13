@@ -3,6 +3,7 @@ import pandas as pd
 import os
 from werkzeug.utils import secure_filename
 from flask_cors import CORS
+import math
  
 #*** Flask configuration
  
@@ -14,7 +15,7 @@ ALLOWED_EXTENSIONS = {'csv'}
  
 app = Flask(__name__, template_folder='templateFiles', static_folder='staticFiles')
 # Configure upload file path flask
-app.config['UPLOAD_FOLDER'] = 'E:\Skripsi\Flask\hello_flask\Coba\Dataset'
+app.config['UPLOAD_FOLDER'] = '/home/biki33/projek/Backend-Flask/dataset'
 CORS(app)
  
 # Define secret key to enable session
@@ -63,26 +64,22 @@ def showData():
     # Retrieving uploaded file path from session
     data_file_path = session.get('uploaded_data_file_path', None)
     # read csv file in python flask (reading uploaded csv file from uploaded server location)
-    uploaded_df = pd.read_csv(data_file_path)
-    test = uploaded_df[0:5]
-    data_utama = test.to_json(orient='index')
-    print(data_utama)
-    return data_utama
-
-     # Check if operation was successful
-    if data_utama:
-        # return a success response
-        response = {
-            'status_code': '200',
-            'message': 'success get data'
-        }
-        return jsonify(response), 200
-    else:
-        # return an error response
-        response = {
-            'status': 'error',
-            'message': 'Operation failed'
-        }
+    dataset = pd.read_csv(data_file_path)
+    data = dataset.to_dict('records')
+    page = request.args.get('page', type=int, default=1)
+    limit = request.args.get('limit', type=int, default=20)
+    start = (page - 1) * limit
+    end = page * limit
+    rows = data[start:end]
+    total_rows = len(data)
+    total_page = math.ceil(total_rows/limit)
+    resp = {
+        'rows': rows,
+        'header': list(dataset.columns),
+        'total_pages': total_page,
+        'total_rows': total_rows,
+    }
+    return resp
  
 if __name__=='__main__':
     app.run(debug = True)
