@@ -1,20 +1,19 @@
-import pandas as pd
-from datetime import datetime
 import os
 import json
 import math
 import numpy as np
+import pandas as pd
+import pmdarima as pm
 import seaborn as sns
+import statsmodels.api as sm
+from itertools import product
+from flask_cors import CORS
+import plotly.express as px
+from datetime import datetime
+import matplotlib.pyplot as plt
+from werkzeug.utils import secure_filename
 from flask import Flask, render_template, request, session
 from flask_paginate import Pagination, get_page_parameter
-from flask_cors import CORS
-from werkzeug.utils import secure_filename
-import matplotlib.pyplot as plt
-import plotly.express as px
-from itertools import product
-import warnings
-import statsmodels.api as sm
-import pmdarima as pm
 from sklearn.metrics import mean_squared_error, mean_absolute_error, mean_absolute_percentage_error
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.stattools import kpss
@@ -112,9 +111,9 @@ def showData():
     limit = request.args.get('limit', type=int, default=20)
     start = (page - 1) * limit
     end = page * limit
-    data = dataset[start:end].to_dict('records')
+    data = dataset[start:end].fillna(value="NaN").to_dict('records')
     rows = data
-    total_rows = len(data)
+    total_rows = len(dataset)
     total_page = math.ceil(total_rows/limit)
     resp = {
         'rows': rows,
@@ -234,9 +233,9 @@ def rollingWindows():
     df_std7d = df_rolling7d.std().shift(1).reset_index()
     df_std30d = df_rolling30d.std().shift(1).reset_index()
 
-    df_ema3d=daily_data[lag_features].ewm(span=3).mean()
-    df_ema7d=daily_data[lag_features].ewm(span=7).mean()
-    df_ema30d=daily_data[lag_features].ewm(span=30).mean()
+    df_ema3d = daily_data[lag_features].ewm(span=3).mean()
+    df_ema7d = daily_data[lag_features].ewm(span=7).mean()
+    df_ema30d = daily_data[lag_features].ewm(span=30).mean()
 
     exp1 = daily_data[lag_features].ewm(span=12, adjust=False).mean()
     exp2 = daily_data[lag_features].ewm(span=26, adjust=False).mean()
@@ -267,11 +266,13 @@ def rollingWindows():
     daily_data["day"] = daily_data.Timestamp.dt.day
     daily_data["day_of_week"] = daily_data.Timestamp.dt.dayofweek
     print(daily_data)
+    print(daily_data.isnull().sum())
     return "Success"
 
 @app.route('/arimax')
 def Arimax():
     global daily_data
+    daily_data['Timestamp'] = pd.to_datetime(daily_data['Timestamp'])
     df_total = daily_data[(daily_data['Timestamp'] > '2012') & (daily_data['Timestamp'] <= '2021')]
     df_train = daily_data[(daily_data['Timestamp'] >= '2012') & (daily_data['Timestamp'] <= '2020')]
     df_test = daily_data[(daily_data['Timestamp'] > '2020') & (daily_data['Timestamp'] <= '2021')]
@@ -299,13 +300,21 @@ def Arimax():
         'month', 'week','day', 'day_of_week']
     
     # Leveraging Auto Arima to find the optimal parameters(p,d and q).
-    model=pm.auto_arima(df_train.Weighted_Price, exogenous=df_train[exogenous_features], trace=True, 
+    model=pm.auto_arima(df_train.Weighted_Price, X = df_train[exogenous_features], trace=True, 
                         error_action="ignore", suppress_warnings=True)
     # Fitting the model based on train data.
-    model.fit(df_train.Weighted_Price,  exogenous=df_train[exogenous_features])
+    model.fit(df_train.Weighted_Price,  X =df_train[exogenous_features])
 
     # Predicting on the train data.
-    df_train['ARIMAX forecast']=model.predict(n_periods=len(df_train), exogenous= df_train[exogenous_features])
+    df_train['ARIMAX forecast']=model.predict(n_periods=len(df_train), X = df_train[exogenous_features])
+
+    # Solve Dataframe Chained Variables for Train Data
+    hasil_prediksi = model.predict(n_periods=len(df_train), X = df_train[exogenous_features])
+    hasil_prediksi = hasil_prediksi.reset_index(drop=True)
+
+    df_train = df_train.reset_index(drop=True)
+    df_train['ARIMAX forecast'] = hasil_prediksi
+    df_train.set_index("Timestamp", drop=False, inplace=True)
 
     # Plotting the prediction vs train dataset values.
     plt.figure(figsize=(18,10))
@@ -315,6 +324,7 @@ def Arimax():
     plt.xlabel('Timestamp')
     plt.ylabel('Bitcoin Price')
     plt.legend()
+    plt.savefig('Train_Plot_Result.png')
     plt.show()
 
     # Evaluating the prediciton Train Dataset using RMSE, MAE and R2 score.
@@ -322,7 +332,15 @@ def Arimax():
     print('Root Mean Square Error:', mean_squared_error(df_train['Weighted_Price'], df_train['ARIMAX forecast'], squared=False).round(2))
 
     # Predicting on the test data.
-    df_test['ARIMAX forecast']=model.predict(n_periods=len(df_test), exogenous= df_test[exogenous_features])
+    df_test['ARIMAX forecast']=model.predict(n_periods=len(df_test), X = df_test[exogenous_features])
+
+    # Solve Dataframe Chained Variables for Test Data
+    hasil_prediksi_Test = model.predict(n_periods=len(df_test), X = df_test[exogenous_features])
+    hasil_prediksi_Test = hasil_prediksi_Test.reset_index(drop=True)
+
+    df_test = df_test.reset_index(drop=True)
+    df_test['ARIMAX forecast'] = hasil_prediksi_Test
+    df_test.set_index("Timestamp", drop=False, inplace=True)
 
     # Plotting the prediction vs test dataset values.
     plt.figure(figsize=(18,10))
@@ -332,6 +350,7 @@ def Arimax():
     plt.xlabel('Timestamp')
     plt.ylabel('Bitcoin Price')
     plt.legend()
+    plt.savefig('Test_Plot_Result.png')
     plt.show()
 
     # Evaluating the prediciton Test Dataset using RMSE, MAE and R2 score.
