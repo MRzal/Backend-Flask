@@ -46,10 +46,14 @@ hourly_data = ''
 daily_data = ''
 filled_dataset = ''
 time_resampled_data = ''
+result1 = ''
+result2 = ''
+feature_extracted = ''
 already_run = False
 already_run_tr = False
 already_run_pd = False
-already_run_ds = False
+already_run_ds1 = False
+already_run_ds2 = False
 already_run_fe = False
 already_run_ar1 = False
 already_run_ar2 = False
@@ -67,17 +71,15 @@ def fillMissingFunct(param):
         param['Low'] = param['Low'].interpolate()
         return param
 
-#ADF Test
-def dickyfullertest(data):
-    result=sm.tsa.stattools.adfuller(data)
-    print('ADF-Statistics: {}'.format(result[0]))
-    print('p-value : {}'.format(result[1]))
-    if result[1]<0.05:
-        print('Rejects the Null Hypothesis (H0) which signifies that the data is stationary.')
-        return True
-    else:
-        print('Fail to reject the Null Hypothesis (H0) which signifies that the data has a unit root and is non-stationary.')
-        return False
+# #ADF Test
+# def dickyfullertest(data):
+#     result=sm.tsa.stattools.adfuller(data)
+#     print('ADF-Statistics: {}'.format(result[0]))
+#     print('p-value : {}'.format(result[1]))
+#     if result[1]<0.05:
+#         print('Rejects the Null Hypothesis (H0) which signifies that the data is stationary.')
+#     else:
+#         print('Fail to reject the Null Hypothesis (H0) which signifies that the data has a unit root and is non-stationary.')
 
 @app.route('/')
 def index():
@@ -134,7 +136,7 @@ def fillMissing():
     global filled_dataset
     global already_run
     if already_run == False:
-        filled_dataset = fillMissingFunct(df)
+        filled_dataset = fillMissingFunct(df) 
     already_run = True
     page = request.args.get('page', type=int, default=1)
     limit = request.args.get('limit', type=int, default=20)
@@ -224,8 +226,11 @@ def plotData():
 @app.route('/data_stationary')
 def dataStationary():
     global daily_data
-    global already_run_ds
-    if already_run_ds == False:
+    global result1
+    global result2
+    global already_run_ds1
+    global already_run_ds2
+    if already_run_ds1 == False:
         # daily_data = daily_data.reset_index(inplace=True)   
         daily_data['Open'] = daily_data['Open'].interpolate()
         daily_data['Close'] = daily_data['Close'].interpolate()
@@ -235,28 +240,40 @@ def dataStationary():
         daily_data['Volume_(Currency)'] = daily_data['Volume_(Currency)'].interpolate()
         daily_data['High'] = daily_data['High'].interpolate()
         daily_data['Low'] = daily_data['Low'].interpolate()
+        already_run_ds1 = True
+    
+    if already_run_ds2 == False:
+        # ADF Test + ADF Test Differencing
+        result1=sm.tsa.stattools.adfuller(daily_data.Weighted_Price.dropna())
+        result2=sm.tsa.stattools.adfuller(daily_data.Weighted_Price.diff().dropna())
+        already_run_ds2 = True
 
-        already_run_ds = True
-        #ADF Test
-        adf_test = dickyfullertest(daily_data.Weighted_Price.dropna())
-        if adf_test == True:
-            resp1 = {
-                    'Hasil ADF': dickyfullertest(daily_data.Weighted_Price.dropna())
-                }
-            return resp1
-        # Differencng used if Fail
-        else :
-            adf_test_diff = dickyfullertest(daily_data.Weighted_Price.diff().dropna())
-            resp2 = {
-                    'Hasil ADF': dickyfullertest(daily_data.Weighted_Price.dropna()),
-                    'Hasil Differencing ADF': dickyfullertest(daily_data.Weighted_Price.diff().dropna())
-                }
-            return resp2
+        #Proses ADF Test
+        if result1[1]<0.05:
+            hasil1 = 'Rejects the Null Hypothesis (H0) which signifies that the data is stationary.'
+        else:
+            hasil1 = 'Fail to reject the Null Hypothesis (H0) which signifies that the data has a unit root and is non-stationary.'
+
+        #Proses ADF Test dengan Differencing
+        if result2[1]<0.05:
+            hasil2 = 'Rejects the Null Hypothesis (H0) which signifies that the data is stationary.'
+        else:
+            hasil2 = 'Fail to reject the Null Hypothesis (H0) which signifies that the data has a unit root and is non-stationary.'
+        resp = {
+                'Hasil ADF Statistics' : result1[0], 
+                'Hasil p-value ADF': result1[1],
+                'Keterangan ADF Test' : hasil1,
+                'Hasil ADF Statistics Differencing' : result2[0], 
+                'Hasil p-value ADF Differencing': result2[1],
+                'Keterangan ADF Test dengan Differencing' : hasil2
+            }
+        return resp
 
 @app.route('/feature_extraction')
 def rollingWindows():
     global daily_data
     global already_run_fe
+    global feature_extracted
     if already_run_fe == False:
         daily_data.reset_index(drop=False, inplace=True)
         daily_data.set_index("Timestamp")
@@ -308,26 +325,24 @@ def rollingWindows():
         daily_data["week"] = daily_data.Timestamp.dt.week
         daily_data["day"] = daily_data.Timestamp.dt.day
         daily_data["day_of_week"] = daily_data.Timestamp.dt.dayofweek
-
+        feature_extracted = daily_data
         already_run_fe = True
 
     page = request.args.get('page', type=int, default=1)
     limit = request.args.get('limit', type=int, default=20)
     start = (page - 1) * limit
     end = page * limit
-    data = daily_data[start:end].to_dict('records')
+    data = feature_extracted[start:end].to_dict('records')
     rows = data
-    total_rows = len(data)
+    total_rows = len(feature_extracted)
     total_page = math.ceil(total_rows/limit)
     resp = {
         'rows': rows,
-        'header': list(daily_data.columns),
+        'header': list(feature_extracted.columns),
         'total_pages': total_page,
         'total_rows': total_rows,
     }
     return resp
-    # print(daily_data)
-    # return "Success"
 
 @app.route('/arimax')
 def Arimax():
