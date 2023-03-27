@@ -44,6 +44,8 @@ app.secret_key = 'This is your secret key to utilize session in Flask'
 df = '' 
 hourly_data = ''
 daily_data = ''
+filled_dataset = ''
+time_resampled_data = ''
 already_run = False
 already_run_tr = False
 already_run_pd = False
@@ -129,21 +131,22 @@ def showData():
 @app.route('/fill_missing')
 def fillMissing():
     global df
+    global filled_dataset
     global already_run
     if already_run == False:
-        fillMissingFunct(df)
+        filled_dataset = fillMissingFunct(df)
     already_run = True
     page = request.args.get('page', type=int, default=1)
     limit = request.args.get('limit', type=int, default=20)
     start = (page - 1) * limit
     end = page * limit
-    data = df[start:end].to_dict('records')
+    data = filled_dataset[start:end].to_dict('records')
     rows = data
-    total_rows = len(data)
+    total_rows = len(filled_dataset)
     total_page = math.ceil(total_rows/limit)
     resp = {
         'rows': rows,
-        'header': list(df.columns),
+        'header': list(filled_dataset.columns),
         'total_pages': total_page,
         'total_rows': total_rows,
     }
@@ -155,6 +158,7 @@ def timeResampling():
     global already_run_tr
     global hourly_data
     global daily_data
+    global time_resampled_data
     if already_run_tr == False:
         df = df.set_index('Timestamp')
 
@@ -162,21 +166,20 @@ def timeResampling():
         hourly_data = hourly_data.reset_index()
 
         daily_data = df.resample("24H").mean() #Daily resampling
-        # daily_data = daily_data.reset_index()
-
+        time_resampled_data = daily_data.reset_index()
     already_run_tr = True
-    # print(hourly_data, daily_data)
+
     page = request.args.get('page', type=int, default=1)
     limit = request.args.get('limit', type=int, default=20)
     start = (page - 1) * limit
     end = page * limit
-    data = daily_data[start:end].to_dict('records')
+    data = time_resampled_data[start:end].to_dict('records')
     rows = data
-    total_rows = len(data)
+    total_rows = len(time_resampled_data)
     total_page = math.ceil(total_rows/limit)
     resp = {
         'rows': rows,
-        'header': list(daily_data.columns),
+        'header': list(time_resampled_data.columns),
         'total_pages': total_page,
         'total_rows': total_rows,
     }
@@ -235,13 +238,20 @@ def dataStationary():
 
         already_run_ds = True
         #ADF Test
-        is_stationary = dickyfullertest(daily_data.Weighted_Price.dropna())
-        if is_stationary ==True:
-            return 'Success'
+        adf_test = dickyfullertest(daily_data.Weighted_Price.dropna())
+        if adf_test == True:
+            resp1 = {
+                    'Hasil ADF': dickyfullertest(daily_data.Weighted_Price.dropna())
+                }
+            return resp1
         # Differencng used if Fail
         else :
-            dickyfullertest(daily_data.Weighted_Price.diff().dropna())
-    return 'Success'
+            adf_test_diff = dickyfullertest(daily_data.Weighted_Price.diff().dropna())
+            resp2 = {
+                    'Hasil ADF': dickyfullertest(daily_data.Weighted_Price.dropna()),
+                    'Hasil Differencing ADF': dickyfullertest(daily_data.Weighted_Price.diff().dropna())
+                }
+            return resp2
 
 @app.route('/feature_extraction')
 def rollingWindows():
