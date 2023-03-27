@@ -12,7 +12,7 @@ import plotly.express as px
 from datetime import datetime
 import matplotlib.pyplot as plt
 from werkzeug.utils import secure_filename
-from flask import Flask, render_template, request, session
+from flask import Flask, render_template, request, session, send_file, url_for
 from flask_paginate import Pagination, get_page_parameter
 from sklearn.metrics import mean_squared_error, mean_absolute_error, mean_absolute_percentage_error
 from statsmodels.tsa.seasonal import seasonal_decompose
@@ -48,6 +48,9 @@ already_run = False
 already_run_tr = False
 already_run_pd = False
 already_run_ds = False
+already_run_fe = False
+already_run_ar1 = False
+already_run_ar2 = False
 
 #Fill Missing Function
 def fillMissingFunct(param):
@@ -159,40 +162,68 @@ def timeResampling():
         hourly_data = hourly_data.reset_index()
 
         daily_data = df.resample("24H").mean() #Daily resampling
-        daily_data = daily_data.reset_index()
+        # daily_data = daily_data.reset_index()
+
     already_run_tr = True
-    print(hourly_data, daily_data)
-    return 'Success'
+    # print(hourly_data, daily_data)
+    page = request.args.get('page', type=int, default=1)
+    limit = request.args.get('limit', type=int, default=20)
+    start = (page - 1) * limit
+    end = page * limit
+    data = daily_data[start:end].to_dict('records')
+    rows = data
+    total_rows = len(data)
+    total_page = math.ceil(total_rows/limit)
+    resp = {
+        'rows': rows,
+        'header': list(daily_data.columns),
+        'total_pages': total_page,
+        'total_rows': total_rows,
+    }
+    return resp
 
 @app.route('/plot_data')
 def plotData():
     global already_run_pd
-    if already_run_pd == False:
-        daily_data.reset_index(inplace=True)    
-        fig = px.line(daily_data, x='Timestamp', y='Weighted_Price', title='Weighted Price with Range Slider and Selectors')
-        fig.update_layout(hovermode="x")  
+    if already_run_pd == False: 
+        # daily_data.reset_index(inplace=True)  
+        # Plotting Data
+        plt.figure(figsize=(18,10))
+        plt.plot(daily_data['Weighted_Price'], label='Weighted Price')
+        plt.title('Plot Bitcoin Price')
+        plt.xlabel('Year')
+        plt.ylabel('Bitcoin Price')
+        plt.legend()
+        plt.savefig('E:\Skripsi\Flask\hello_flask\Coba\staticFiles\plot_data.jpg')
+        # fig = px.line(daily_data, x='Timestamp', y='Weighted_Price', title='Weighted Price with Range Slider and Selectors')
+        # fig.update_layout(hovermode="x")  
 
-        fig.update_xaxes(
-            rangeslider_visible=True,
-            rangeselector=dict(
-                buttons=list([
-                    dict(count=1, label="1m", step="month", stepmode="backward"),
-                    dict(count=6, label="6m", step="month", stepmode="backward"),
-                    dict(count=1, label="1y", step="year", stepmode="backward"),
-                    dict(count=2, label="2y", step="year", stepmode="backward"),
-                    dict(step="all") 
-                ])
-            )
-        )
-    fig.show()
+        # fig.update_xaxes(
+        #     rangeslider_visible=True,
+        #     rangeselector=dict(
+        #         buttons=list([
+        #             dict(count=1, label="1m", step="month", stepmode="backward"),
+        #             dict(count=6, label="6m", step="month", stepmode="backward"),
+        #             dict(count=1, label="1y", step="year", stepmode="backward"),
+        #             dict(count=2, label="2y", step="year", stepmode="backward"),
+        #             dict(step="all") 
+        #         ])
+        #     )
+        # )
+    # fig.show()
+    # plt.savefig('E:\Skripsi\Flask\hello_flask\Coba\staticFiles\plot_data.jpg')
     already_run_pd = True  
-    return 'Success'
+    resp = {
+        'Grafik': url_for('static', filename='plot_data.jpg',  _external=True)
+    }
+    return resp
 
 @app.route('/data_stationary')
 def dataStationary():
     global daily_data
     global already_run_ds
     if already_run_ds == False:
+        # daily_data = daily_data.reset_index(inplace=True)   
         daily_data['Open'] = daily_data['Open'].interpolate()
         daily_data['Close'] = daily_data['Close'].interpolate()
         daily_data['Weighted_Price'] = daily_data['Weighted_Price'].interpolate()
@@ -215,64 +246,87 @@ def dataStationary():
 @app.route('/feature_extraction')
 def rollingWindows():
     global daily_data
-    daily_data.set_index("Timestamp")
-    daily_data.reset_index(drop=False, inplace=True)
-    lag_features = ["Open", "High", "Low", "Close", "Volume_(BTC)"]
-    win1 = 3
-    win2 = 7
-    win3 = 30
-    df_rolling3d = daily_data[lag_features].rolling(window=win1, min_periods=0)
-    df_rolling7d = daily_data[lag_features].rolling(window=win2, min_periods=0)
-    df_rolling30d = daily_data[lag_features].rolling(window=win3, min_periods=0)
+    global already_run_fe
+    if already_run_fe == False:
+        daily_data.reset_index(drop=False, inplace=True)
+        daily_data.set_index("Timestamp")
+        lag_features = ["Open", "High", "Low", "Close", "Volume_(BTC)"]
+        win1 = 3
+        win2 = 7
+        win3 = 30
+        df_rolling3d = daily_data[lag_features].rolling(window=win1, min_periods=0)
+        df_rolling7d = daily_data[lag_features].rolling(window=win2, min_periods=0)
+        df_rolling30d = daily_data[lag_features].rolling(window=win3, min_periods=0)
 
-    df_mean3d = df_rolling3d.mean().shift(1).reset_index()
-    df_mean7d = df_rolling7d.mean().shift(1).reset_index()
-    df_mean30d = df_rolling30d.mean().shift(1).reset_index()
+        df_mean3d = df_rolling3d.mean().shift(1).reset_index()
+        df_mean7d = df_rolling7d.mean().shift(1).reset_index()
+        df_mean30d = df_rolling30d.mean().shift(1).reset_index()
 
-    df_std3d = df_rolling3d.std().shift(1).reset_index()
-    df_std7d = df_rolling7d.std().shift(1).reset_index()
-    df_std30d = df_rolling30d.std().shift(1).reset_index()
+        df_std3d = df_rolling3d.std().shift(1).reset_index()
+        df_std7d = df_rolling7d.std().shift(1).reset_index()
+        df_std30d = df_rolling30d.std().shift(1).reset_index()
 
-    df_ema3d = daily_data[lag_features].ewm(span=3).mean()
-    df_ema7d = daily_data[lag_features].ewm(span=7).mean()
-    df_ema30d = daily_data[lag_features].ewm(span=30).mean()
+        df_ema3d = daily_data[lag_features].ewm(span=3).mean()
+        df_ema7d = daily_data[lag_features].ewm(span=7).mean()
+        df_ema30d = daily_data[lag_features].ewm(span=30).mean()
 
-    exp1 = daily_data[lag_features].ewm(span=12, adjust=False).mean()
-    exp2 = daily_data[lag_features].ewm(span=26, adjust=False).mean()
-    df_macd = exp1 - exp2
-    df_signal = df_macd.ewm(span=9, adjust=False).mean()
+        exp1 = daily_data[lag_features].ewm(span=12, adjust=False).mean()
+        exp2 = daily_data[lag_features].ewm(span=26, adjust=False).mean()
+        df_macd = exp1 - exp2
+        df_signal = df_macd.ewm(span=9, adjust=False).mean()
 
-    for feature in lag_features:
-        daily_data["{0}_mean_lag{1}".format(feature,win1)] = df_mean3d[feature]
-        daily_data["{0}_mean_lag{1}".format(feature,win2)] = df_mean7d[feature]
-        daily_data["{0}_mean_lag{1}".format(feature,win3)] = df_mean30d[feature]
+        for feature in lag_features:
+            daily_data["{0}_mean_lag{1}".format(feature,win1)] = df_mean3d[feature]
+            daily_data["{0}_mean_lag{1}".format(feature,win2)] = df_mean7d[feature]
+            daily_data["{0}_mean_lag{1}".format(feature,win3)] = df_mean30d[feature]
     
-        daily_data["{0}_std_lag{1}".format(feature,win1)] = df_std3d[feature]
-        daily_data["{0}_std_lag{1}".format(feature,win2)] = df_std7d[feature]
-        daily_data["{0}_std_lag{1}".format(feature,win3)] = df_std30d[feature]
+            daily_data["{0}_std_lag{1}".format(feature,win1)] = df_std3d[feature]
+            daily_data["{0}_std_lag{1}".format(feature,win2)] = df_std7d[feature]
+            daily_data["{0}_std_lag{1}".format(feature,win3)] = df_std30d[feature]
     
-        daily_data["{0}_ewm{1}".format(feature,win1)] = df_ema3d[feature]
-        daily_data["{0}_ewm{1}".format(feature,win2)] = df_ema7d[feature]
-        daily_data["{0}_ewm{1}".format(feature,win3)] = df_ema30d[feature]
+            daily_data["{0}_ewm{1}".format(feature,win1)] = df_ema3d[feature]
+            daily_data["{0}_ewm{1}".format(feature,win2)] = df_ema7d[feature]
+            daily_data["{0}_ewm{1}".format(feature,win3)] = df_ema30d[feature]
     
-        daily_data['{0}_macd'.format(feature)]= df_macd[feature]
-        daily_data['{0}_signal'.format(feature)]= df_signal[feature]
+            daily_data['{0}_macd'.format(feature)]= df_macd[feature]
+            daily_data['{0}_signal'.format(feature)]= df_signal[feature]
 
-    daily_data.fillna(daily_data.mean(), inplace=True)
+        daily_data.fillna(daily_data.mean(), inplace=True)
 
-    daily_data.set_index("Timestamp", drop=False, inplace=True)
-    daily_data["month"] = daily_data.Timestamp.dt.month
-    daily_data["week"] = daily_data.Timestamp.dt.week
-    daily_data["day"] = daily_data.Timestamp.dt.day
-    daily_data["day_of_week"] = daily_data.Timestamp.dt.dayofweek
-    print(daily_data)
-    print(daily_data.isnull().sum())
-    return "Success"
+        daily_data.set_index("Timestamp", drop=False, inplace=True)
+        daily_data["month"] = daily_data.Timestamp.dt.month
+        daily_data["week"] = daily_data.Timestamp.dt.week
+        daily_data["day"] = daily_data.Timestamp.dt.day
+        daily_data["day_of_week"] = daily_data.Timestamp.dt.dayofweek
+
+        already_run_fe = True
+
+    page = request.args.get('page', type=int, default=1)
+    limit = request.args.get('limit', type=int, default=20)
+    start = (page - 1) * limit
+    end = page * limit
+    data = daily_data[start:end].to_dict('records')
+    rows = data
+    total_rows = len(data)
+    total_page = math.ceil(total_rows/limit)
+    resp = {
+        'rows': rows,
+        'header': list(daily_data.columns),
+        'total_pages': total_page,
+        'total_rows': total_rows,
+    }
+    return resp
+    # print(daily_data)
+    # return "Success"
 
 @app.route('/arimax')
 def Arimax():
     global daily_data
-    daily_data['Timestamp'] = pd.to_datetime(daily_data['Timestamp'])
+    global already_run_ar1
+    global already_run_ar2
+    if already_run_ar1 == False:
+        daily_data['Timestamp'] = pd.to_datetime(daily_data['Timestamp'])
+        already_run_ar1 = True
     df_total = daily_data[(daily_data['Timestamp'] > '2012') & (daily_data['Timestamp'] <= '2021')]
     df_train = daily_data[(daily_data['Timestamp'] >= '2012') & (daily_data['Timestamp'] <= '2020')]
     df_test = daily_data[(daily_data['Timestamp'] > '2020') & (daily_data['Timestamp'] <= '2021')]
@@ -281,30 +335,32 @@ def Arimax():
     print('Train Shape :', df_train.shape)
     print('Test Shape :', df_test.shape)
 
-    # Creating a list of exogenous or exemplary features.
-    exogenous_features = ['Open_mean_lag3',
-        'Open_mean_lag7', 'Open_mean_lag30', 'Open_std_lag3', 'Open_std_lag7',
-        'Open_std_lag30', 'High_mean_lag3', 'High_mean_lag7', 'High_mean_lag30',
-        'High_std_lag3', 'High_std_lag7', 'High_std_lag30', 'Low_mean_lag3',
-        'Low_mean_lag7', 'Low_mean_lag30', 'Low_std_lag3', 'Low_std_lag7',
-        'Low_std_lag30', 'Close_mean_lag3', 'Close_mean_lag7',
-        'Close_mean_lag30', 'Close_std_lag3', 'Close_std_lag7',
-        'Close_std_lag30', 'Volume_(BTC)_mean_lag3', 'Volume_(BTC)_mean_lag7',
-        'Volume_(BTC)_mean_lag30', 'Volume_(BTC)_std_lag3',
-        'Volume_(BTC)_std_lag7', 'Volume_(BTC)_std_lag30', 'Open_ewm3','Open_ewm7','Open_ewm30',
-        'High_ewm3','High_ewm7','High_ewm30','Low_ewm3','Low_ewm7','Low_ewm30',
-        'Close_ewm3', 'Close_ewm7', 'Close_ewm30',
-        'Volume_(BTC)_ewm3', 'Volume_(BTC)_ewm7', 'Volume_(BTC)_ewm30', 
-        'Open_macd', 'Close_macd', 'High_macd' , 'Low_macd', 'Volume_(BTC)_macd',
-        'Open_signal', 'Close_signal', 'High_signal', 'Low_signal', 'Volume_(BTC)_signal',
-        'month', 'week','day', 'day_of_week']
+    if already_run_ar2 == False:
+        # Creating a list of exogenous or exemplary features.
+        exogenous_features = ['Open_mean_lag3',
+            'Open_mean_lag7', 'Open_mean_lag30', 'Open_std_lag3', 'Open_std_lag7',
+            'Open_std_lag30', 'High_mean_lag3', 'High_mean_lag7', 'High_mean_lag30',
+            'High_std_lag3', 'High_std_lag7', 'High_std_lag30', 'Low_mean_lag3',
+            'Low_mean_lag7', 'Low_mean_lag30', 'Low_std_lag3', 'Low_std_lag7',
+            'Low_std_lag30', 'Close_mean_lag3', 'Close_mean_lag7',
+            'Close_mean_lag30', 'Close_std_lag3', 'Close_std_lag7',
+            'Close_std_lag30', 'Volume_(BTC)_mean_lag3', 'Volume_(BTC)_mean_lag7',
+            'Volume_(BTC)_mean_lag30', 'Volume_(BTC)_std_lag3',
+            'Volume_(BTC)_std_lag7', 'Volume_(BTC)_std_lag30', 'Open_ewm3','Open_ewm7','Open_ewm30',
+            'High_ewm3','High_ewm7','High_ewm30','Low_ewm3','Low_ewm7','Low_ewm30',
+            'Close_ewm3', 'Close_ewm7', 'Close_ewm30',
+            'Volume_(BTC)_ewm3', 'Volume_(BTC)_ewm7', 'Volume_(BTC)_ewm30', 
+            'Open_macd', 'Close_macd', 'High_macd' , 'Low_macd', 'Volume_(BTC)_macd',
+            'Open_signal', 'Close_signal', 'High_signal', 'Low_signal', 'Volume_(BTC)_signal',
+            'month', 'week','day', 'day_of_week']
     
-    # Leveraging Auto Arima to find the optimal parameters(p,d and q).
-    model=pm.auto_arima(df_train.Weighted_Price, X = df_train[exogenous_features], trace=True, 
+        # Leveraging Auto Arima to find the optimal parameters(p,d and q).
+        model=pm.auto_arima(df_train.Weighted_Price, X = df_train[exogenous_features], trace=True, 
                         error_action="ignore", suppress_warnings=True)
-    # Fitting the model based on train data.
-    model.fit(df_train.Weighted_Price,  X =df_train[exogenous_features])
-
+        # Fitting the model based on train data.
+        model.fit(df_train.Weighted_Price,  X = df_train[exogenous_features])
+        already_run_ar2 = True
+        
     # Predicting on the train data.
     df_train['ARIMAX forecast']=model.predict(n_periods=len(df_train), X = df_train[exogenous_features])
 
@@ -324,12 +380,12 @@ def Arimax():
     plt.xlabel('Timestamp')
     plt.ylabel('Bitcoin Price')
     plt.legend()
-    plt.savefig('Train_Plot_Result.png')
-    plt.show()
+    plt.savefig('E:\Skripsi\Flask\hello_flask\Coba\staticFiles\train_plot_result.jpg')
+    # plt.show()
 
     # Evaluating the prediciton Train Dataset using RMSE, MAE and R2 score.
-    print('Mean Absolute Error:', mean_absolute_error(df_train['Weighted_Price'], df_train['ARIMAX forecast']).round(2))
-    print('Root Mean Square Error:', mean_squared_error(df_train['Weighted_Price'], df_train['ARIMAX forecast'], squared=False).round(2))
+    MAE_Train = mean_absolute_error(df_train['Weighted_Price'], df_train['ARIMAX forecast']).round(2)
+    RMSE_Train = mean_squared_error(df_train['Weighted_Price'], df_train['ARIMAX forecast'], squared=False).round(2)
 
     # Predicting on the test data.
     df_test['ARIMAX forecast']=model.predict(n_periods=len(df_test), X = df_test[exogenous_features])
@@ -350,14 +406,23 @@ def Arimax():
     plt.xlabel('Timestamp')
     plt.ylabel('Bitcoin Price')
     plt.legend()
-    plt.savefig('Test_Plot_Result.png')
-    plt.show()
+    plt.savefig('E:\Skripsi\Flask\hello_flask\Coba\Grafik\test_plot_result.jpg')
+    # plt.show()
 
     # Evaluating the prediciton Test Dataset using RMSE, MAE and R2 score.
-    print('Root Mean Square Error:', mean_squared_error(df_test['Weighted_Price'], df_test['ARIMAX forecast'], squared=False).round(2))
-    print('Mean Absolute Error:', mean_absolute_error(df_test['Weighted_Price'], df_test['ARIMAX forecast']).round(2))
+    RMSE_Test = mean_squared_error(df_test['Weighted_Price'], df_test['ARIMAX forecast'], squared=False).round(2)
+    MAE_Test = mean_absolute_error(df_test['Weighted_Price'], df_test['ARIMAX forecast']).round(2)
+       
+    resp = {
+        "Grafik Train Data" : url_for('static', filename = 'train_plot_result.jpg',  _external=True),
+        'RMSE Train': RMSE_Train,
+        'MAE Train': MAE_Train,
+        'Grafik Test Data': url_for('static', filename = 'test_plot_result.jpg',  _external=True),
+        'RMSE Test' : RMSE_Test,
+        'MAE Test' : MAE_Test
+    }
 
-    return "Success"
+    return resp
 
      # Check if operation was successful 
     if data_utama:
