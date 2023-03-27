@@ -260,12 +260,12 @@ def dataStationary():
         else:
             hasil2 = 'Fail to reject the Null Hypothesis (H0) which signifies that the data has a unit root and is non-stationary.'
         resp = {
-                'Hasil ADF Statistics' : result1[0], 
-                'Hasil p-value ADF': result1[1],
-                'Keterangan ADF Test' : hasil1,
-                'Hasil ADF Statistics Differencing' : result2[0], 
-                'Hasil p-value ADF Differencing': result2[1],
-                'Keterangan ADF Test dengan Differencing' : hasil2
+                'hasil_adf_statistics' : result1[0], 
+                'hasil_pvalue_ADF': result1[1],
+                'keterangan_adf_test' : hasil1,
+                'hasil_adf_statistics_differencing' : result2[0], 
+                'hasil_pvalue_adf_differencing': result2[1],
+                'keterangan_adf_test_differencing' : hasil2
             }
         return resp
 
