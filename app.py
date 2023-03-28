@@ -58,28 +58,18 @@ already_run_fe = False
 already_run_ar1 = False
 already_run_ar2 = False
 
-#Fill Missing Function
-def fillMissingFunct(param):
-        param['Timestamp'] = [datetime.utcfromtimestamp(x) for x in param['Timestamp']] 
-        param['Open'] = param['Open'].interpolate()
-        param['Close'] = param['Close'].interpolate()
-        param['Weighted_Price'] = param['Weighted_Price'].interpolate()
+# #Fill Missing Function
+# def fillMissingFunct(param):
+#         param['Timestamp'] = [datetime.utcfromtimestamp(x) for x in param['Timestamp']] 
+#         param['Open'] = param['Open'].interpolate()
+#         param['Close'] = param['Close'].interpolate()
+#         param['Weighted_Price'] = param['Weighted_Price'].interpolate()
 
-        param['Volume_(BTC)'] = param['Volume_(BTC)'].interpolate()
-        param['Volume_(Currency)'] = param['Volume_(Currency)'].interpolate()
-        param['High'] = param['High'].interpolate()
-        param['Low'] = param['Low'].interpolate()
-        return param
-
-# #ADF Test
-# def dickyfullertest(data):
-#     result=sm.tsa.stattools.adfuller(data)
-#     print('ADF-Statistics: {}'.format(result[0]))
-#     print('p-value : {}'.format(result[1]))
-#     if result[1]<0.05:
-#         print('Rejects the Null Hypothesis (H0) which signifies that the data is stationary.')
-#     else:
-#         print('Fail to reject the Null Hypothesis (H0) which signifies that the data has a unit root and is non-stationary.')
+#         param['Volume_(BTC)'] = param['Volume_(BTC)'].interpolate()
+#         param['Volume_(Currency)'] = param['Volume_(Currency)'].interpolate()
+#         param['High'] = param['High'].interpolate()
+#         param['Low'] = param['Low'].interpolate()
+#         return param
 
 @app.route('/')
 def index():
@@ -136,7 +126,17 @@ def fillMissing():
     global filled_dataset
     global already_run
     if already_run == False:
-        filled_dataset = fillMissingFunct(df) 
+        df['Timestamp'] = [datetime.utcfromtimestamp(x) for x in df['Timestamp']] 
+        df['Open'] = df['Open'].interpolate()
+        df['Close'] = df['Close'].interpolate()
+        df['Weighted_Price'] = df['Weighted_Price'].interpolate()
+
+        df['Volume_(BTC)'] = df['Volume_(BTC)'].interpolate()
+        df['Volume_(Currency)'] = df['Volume_(Currency)'].interpolate()
+        df['High'] = df['High'].interpolate()
+        df['Low'] = df['Low'].interpolate()
+
+        filled_dataset = df
     already_run = True
     page = request.args.get('page', type=int, default=1)
     limit = request.args.get('limit', type=int, default=20)
@@ -405,7 +405,8 @@ def Arimax():
     plt.xlabel('Timestamp')
     plt.ylabel('Bitcoin Price')
     plt.legend()
-    plt.savefig('E:\Skripsi\Flask\hello_flask\Coba\staticFiles\train_plot_result.jpg')
+    # train_plot_result.jpg
+    plt.savefig('E:\Skripsi\Flask\hello_flask\Coba\staticFiles\plot_result.jpg')
     # plt.show()
 
     # Evaluating the prediciton Train Dataset using RMSE, MAE and R2 score.
@@ -431,7 +432,7 @@ def Arimax():
     plt.xlabel('Timestamp')
     plt.ylabel('Bitcoin Price')
     plt.legend()
-    plt.savefig('E:\Skripsi\Flask\hello_flask\Coba\Grafik\test_plot_result.jpg')
+    plt.savefig('E:\Skripsi\Flask\hello_flask\Coba\staticFiles\wetrain_result.jpg')
     # plt.show()
 
     # Evaluating the prediciton Test Dataset using RMSE, MAE and R2 score.
@@ -439,12 +440,12 @@ def Arimax():
     MAE_Test = mean_absolute_error(df_test['Weighted_Price'], df_test['ARIMAX forecast']).round(2)
        
     resp = {
-        "Grafik Train Data" : url_for('static', filename = 'train_plot_result.jpg',  _external=True),
-        'RMSE Train': RMSE_Train,
-        'MAE Train': MAE_Train,
-        'Grafik Test Data': url_for('static', filename = 'test_plot_result.jpg',  _external=True),
-        'RMSE Test' : RMSE_Test,
-        'MAE Test' : MAE_Test
+        "grafik_train_data" : url_for('static', filename = 'plot_result.jpg',  _external=True),
+        'RMSE_train': RMSE_Train,
+        'MAE_train': MAE_Train,
+        'grafik_test_data': url_for('static', filename = 'wetrain_result.jpg',  _external=True),
+        'RMSE_test' : RMSE_Test,
+        'MAE_test' : MAE_Test
     }
 
     return resp
