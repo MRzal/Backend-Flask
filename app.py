@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from werkzeug.utils import secure_filename
 from flask import Flask, render_template, request, session, send_file, url_for
 from flask_paginate import Pagination, get_page_parameter
-from sklearn.metrics import mean_squared_error, mean_absolute_error, mean_absolute_percentage_error
+from sklearn.metrics import mean_squared_error, mean_absolute_error, mean_absolute_percentage_error, r2_score
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.stattools import kpss
 from statsmodels.tsa.stattools import adfuller
@@ -28,14 +28,14 @@ from functools import lru_cache
  
 # Define folder to save uploaded files to process further
 UPLOAD_FOLDER = os.path.join('staticFiles', 'uploads')
- 
+   
 # Define allowed files (for this example I want only csv file)
 ALLOWED_EXTENSIONS = {'csv'}
  
 app = Flask(__name__, template_folder='templateFiles', static_folder='staticFiles')
 # Configure upload file path flask
 app.config['UPLOAD_FOLDER'] = 'E:\Skripsi\Flask\hello_flask\Coba\Dataset'
-CORS(app)
+CORS(app, supports_credentials = True)
  
 # Define secret key to enable session
 app.secret_key = 'This is your secret key to utilize session in Flask'
@@ -57,6 +57,12 @@ already_run_ds2 = False
 already_run_fe = False
 already_run_ar1 = False
 already_run_ar2 = False
+hasil_adf_stat = ''
+hasil_pval_adf = ''
+keterangan_adf = ''
+hasil_adf_stat_diff = ''
+hasil_pval_adf_diff = ''
+keterangan_adf_diff = ''
 
 # #Fill Missing Function
 # def fillMissingFunct(param):
@@ -191,7 +197,6 @@ def timeResampling():
 def plotData():
     global already_run_pd
     if already_run_pd == False: 
-        # daily_data.reset_index(inplace=True)  
         # Plotting Data
         plt.figure(figsize=(18,10))
         plt.plot(daily_data['Weighted_Price'], label='Weighted Price')
@@ -200,23 +205,7 @@ def plotData():
         plt.ylabel('Bitcoin Price')
         plt.legend()
         plt.savefig('E:\Skripsi\Flask\hello_flask\Coba\staticFiles\plot_data.jpg')
-        # fig = px.line(daily_data, x='Timestamp', y='Weighted_Price', title='Weighted Price with Range Slider and Selectors')
-        # fig.update_layout(hovermode="x")  
 
-        # fig.update_xaxes(
-        #     rangeslider_visible=True,
-        #     rangeselector=dict(
-        #         buttons=list([
-        #             dict(count=1, label="1m", step="month", stepmode="backward"),
-        #             dict(count=6, label="6m", step="month", stepmode="backward"),
-        #             dict(count=1, label="1y", step="year", stepmode="backward"),
-        #             dict(count=2, label="2y", step="year", stepmode="backward"),
-        #             dict(step="all") 
-        #         ])
-        #     )
-        # )
-    # fig.show()
-    # plt.savefig('E:\Skripsi\Flask\hello_flask\Coba\staticFiles\plot_data.jpg')
     already_run_pd = True  
     resp = {
         'Grafik': url_for('static', filename='plot_data.jpg',  _external=True)
@@ -226,8 +215,12 @@ def plotData():
 @app.route('/data_stationary')
 def dataStationary():
     global daily_data
-    global result1
-    global result2
+    global hasil_adf_stat
+    global hasil_pval_adf
+    global keterangan_adf
+    global hasil_adf_stat_diff
+    global hasil_pval_adf_diff
+    global keterangan_adf_diff
     global already_run_ds1
     global already_run_ds2
     if already_run_ds1 == False:
@@ -246,7 +239,6 @@ def dataStationary():
         # ADF Test + ADF Test Differencing
         result1=sm.tsa.stattools.adfuller(daily_data.Weighted_Price.dropna())
         result2=sm.tsa.stattools.adfuller(daily_data.Weighted_Price.diff().dropna())
-        already_run_ds2 = True
 
         #Proses ADF Test
         if result1[1]<0.05:
@@ -259,13 +251,21 @@ def dataStationary():
             hasil2 = 'Rejects the Null Hypothesis (H0) which signifies that the data is stationary.'
         else:
             hasil2 = 'Fail to reject the Null Hypothesis (H0) which signifies that the data has a unit root and is non-stationary.'
+        
+        hasil_adf_stat = result1[0]
+        hasil_pval_adf = result1[1]
+        keterangan_adf = hasil1
+        hasil_adf_stat_diff = result2[0]
+        hasil_pval_adf_diff = result2[1]
+        keterangan_adf_diff = hasil2
+        already_run_ds2 = True
         resp = {
-                'hasil_adf_statistics' : result1[0], 
-                'hasil_pvalue_ADF': result1[1],
-                'keterangan_adf_test' : hasil1,
-                'hasil_adf_statistics_differencing' : result2[0], 
-                'hasil_pvalue_adf_differencing': result2[1],
-                'keterangan_adf_test_differencing' : hasil2
+                'hasil_adf_statistics' : hasil_adf_stat, 
+                'hasil_pvalue_ADF': hasil_pval_adf,
+                'keterangan_adf_test' : keterangan_adf,
+                'hasil_adf_statistics_differencing' : hasil_adf_stat_diff, 
+                'hasil_pvalue_adf_differencing': hasil_pval_adf_diff,
+                'keterangan_adf_test_differencing' : keterangan_adf_diff
             }
         return resp
 
@@ -412,7 +412,9 @@ def Arimax():
     # Evaluating the prediciton Train Dataset using RMSE, MAE and R2 score.
     MAE_Train = mean_absolute_error(df_train['Weighted_Price'], df_train['ARIMAX forecast']).round(2)
     RMSE_Train = mean_squared_error(df_train['Weighted_Price'], df_train['ARIMAX forecast'], squared=False).round(2)
-
+    MAPE_Train = mean_absolute_percentage_error(df_train['Weighted_Price'], df_train['ARIMAX forecast'])
+    R2_Train = r2_score(df_train['Weighted_Price'], df_train['ARIMAX forecast'])
+    
     # Predicting on the test data.
     df_test['ARIMAX forecast']=model.predict(n_periods=len(df_test), X = df_test[exogenous_features])
 
@@ -438,14 +440,19 @@ def Arimax():
     # Evaluating the prediciton Test Dataset using RMSE, MAE and R2 score.
     RMSE_Test = mean_squared_error(df_test['Weighted_Price'], df_test['ARIMAX forecast'], squared=False).round(2)
     MAE_Test = mean_absolute_error(df_test['Weighted_Price'], df_test['ARIMAX forecast']).round(2)
-       
+    MAPE_Test = mean_absolute_percentage_error(df_test['Weighted_Price'], df_test['ARIMAX forecast'])
+    R2_Test = r2_score(df_test['Weighted_Price'], df_test['ARIMAX forecast'])
     resp = {
         "grafik_train_data" : url_for('static', filename = 'plot_result.jpg',  _external=True),
         'RMSE_train': RMSE_Train,
         'MAE_train': MAE_Train,
+        'MAPE_train' : MAPE_Train,
+        'R2_train' :R2_Train,
         'grafik_test_data': url_for('static', filename = 'wetrain_result.jpg',  _external=True),
         'RMSE_test' : RMSE_Test,
-        'MAE_test' : MAE_Test
+        'MAE_test' : MAE_Test,
+        'MAPE_test' : MAPE_Test,
+        'R2_test' :R2_Test
     }
 
     return resp
